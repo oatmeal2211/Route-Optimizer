@@ -7,6 +7,10 @@ on:
     - cron: '0 * * * *'
   workflow_dispatch:  # Also allows you to click "Run workflow" button manually
 
+# CRITICAL: Add write permissions
+permissions:
+  contents: write  # Allows the workflow to push commits
+
 # WHAT to do when it runs
 jobs:
   collect-traffic:
@@ -16,6 +20,8 @@ jobs:
     # Step 1: Download your code from GitHub
     - name: Checkout repository
       uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}  # Use GitHub's built-in token
       
     # Step 2: Install Python
     - name: Set up Python
@@ -35,7 +41,17 @@ jobs:
       run: |
         python collect_traffic_github.py
         
-    # Step 5: Save the data files
+    # Step 5: Check if data was created
+    - name: Check if data was created
+      run: |
+        if [ -f "traffic_historical.db" ]; then
+          echo "✓ Database file created successfully"
+          ls -lh traffic_historical.db
+        else
+          echo "⚠ Warning: Database file not found"
+        fi
+        
+    # Step 6: Save the data files
     - name: Upload data to artifacts
       uses: actions/upload-artifact@v4
       with:
@@ -44,12 +60,24 @@ jobs:
           traffic_historical.db
           historical_data/
         retention-days: 30
+        if-no-files-found: warn
         
-    # Step 6 (Optional): Save data back to your repository
+    # Step 7: Save data back to your repository
     - name: Commit and push data
       run: |
         git config --local user.email "github-actions[bot]@users.noreply.github.com"
         git config --local user.name "github-actions[bot]"
+        
+        # Pull latest changes first
+        git pull origin main || true
+        
+        # Add files
         git add traffic_historical.db historical_data/ || true
-        git commit -m "Update traffic data - $(date)" || true
-        git push || true
+        
+        # Only commit if there are changes
+        if git diff --staged --quiet; then
+          echo "No changes to commit"
+        else
+          git commit -m "Update traffic data - $(date '+%Y-%m-%d %H:%M:%S UTC')"
+          git push origin main
+        fi
