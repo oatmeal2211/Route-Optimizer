@@ -1,0 +1,55 @@
+name: Hourly Traffic Data Collection
+
+# WHEN to run this workflow
+on:
+  schedule:
+    # Runs every hour at minute 0 (like 1:00, 2:00, 3:00, etc.)
+    - cron: '0 * * * *'
+  workflow_dispatch:  # Also allows you to click "Run workflow" button manually
+
+# WHAT to do when it runs
+jobs:
+  collect-traffic:
+    runs-on: ubuntu-latest  # Use a Linux computer in the cloud
+    
+    steps:
+    # Step 1: Download your code from GitHub
+    - name: Checkout repository
+      uses: actions/checkout@v3
+      
+    # Step 2: Install Python
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    # Step 3: Install the libraries your script needs
+    - name: Install dependencies
+      run: |
+        pip install requests pandas geopandas pyarrow
+        
+    # Step 4: Run your traffic collection script
+    - name: Run traffic data collection
+      env:
+        HERE_API_KEY: ${{ secrets.HERE_API_KEY }}  # Use the secret you saved
+      run: |
+        python collect_traffic_github.py
+        
+    # Step 5: Save the data files
+    - name: Upload data to artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: traffic-data-${{ github.run_number }}
+        path: |
+          traffic_historical.db
+          historical_data/
+        retention-days: 30
+        
+    # Step 6 (Optional): Save data back to your repository
+    - name: Commit and push data
+      run: |
+        git config --local user.email "github-actions[bot]@users.noreply.github.com"
+        git config --local user.name "github-actions[bot]"
+        git add traffic_historical.db historical_data/ || true
+        git commit -m "Update traffic data - $(date)" || true
+        git push || true
