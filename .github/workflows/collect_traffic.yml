@@ -15,7 +15,7 @@ jobs:
     steps:
     # Step 1: Download your code from GitHub
     - name: Checkout repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       
     # Step 2: Install Python
     - name: Set up Python
@@ -37,7 +37,7 @@ jobs:
         
     # Step 5: Save the data files
     - name: Upload data to artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: traffic-data-${{ github.run_number }}
         path: |
