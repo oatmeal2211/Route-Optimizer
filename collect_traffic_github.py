@@ -112,7 +112,7 @@ def parse_incidents_to_dataframe(incidents_data):
     return pd.DataFrame(records)
 
 def save_to_sqlite(flow_df, incidents_df, db_name='traffic_historical.db'):
-    """Save to SQLite database"""
+    """Save to SQLite database with proper schema handling"""
     conn = sqlite3.connect(db_name)
     
     try:
@@ -121,18 +121,44 @@ def save_to_sqlite(flow_df, incidents_df, db_name='traffic_historical.db'):
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='traffic_flow'")
             table_exists = cursor.fetchone() is not None
             
+            if table_exists:
+                # Check if schema matches (has timestamp column)
+                cursor.execute("PRAGMA table_info(traffic_flow)")
+                columns = [row[1] for row in cursor.fetchall()]
+                if 'timestamp' not in columns:
+                    print("⚠ Warning: Old schema detected, dropping table...")
+                    cursor.execute("DROP TABLE traffic_flow")
+                    conn.commit()
+                    table_exists = False
+            
             if_exists = 'replace' if not table_exists else 'append'
             flow_df.to_sql('traffic_flow', conn, if_exists=if_exists, index=False)
-            print(f"✓ Saved {len(flow_df)} flow records")
+            
+            # Count total records
+            cursor.execute("SELECT COUNT(*) FROM traffic_flow")
+            total_records = cursor.fetchone()[0]
+            print(f"✓ Saved {len(flow_df)} new flow records (Total in DB: {total_records})")
         
         if incidents_df is not None and len(incidents_df) > 0:
             cursor = conn.cursor()
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='traffic_incidents'")
             table_exists = cursor.fetchone() is not None
             
+            if table_exists:
+                cursor.execute("PRAGMA table_info(traffic_incidents)")
+                columns = [row[1] for row in cursor.fetchall()]
+                if 'timestamp' not in columns:
+                    print("⚠ Warning: Old schema detected, dropping table...")
+                    cursor.execute("DROP TABLE traffic_incidents")
+                    conn.commit()
+                    table_exists = False
+            
             if_exists = 'replace' if not table_exists else 'append'
             incidents_df.to_sql('traffic_incidents', conn, if_exists=if_exists, index=False)
-            print(f"✓ Saved {len(incidents_df)} incident records")
+            
+            cursor.execute("SELECT COUNT(*) FROM traffic_incidents")
+            total_records = cursor.fetchone()[0]
+            print(f"✓ Saved {len(incidents_df)} new incident records (Total in DB: {total_records})")
     
     finally:
         conn.close()
