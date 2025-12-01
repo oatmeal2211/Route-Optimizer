@@ -1,15 +1,15 @@
 import requests
 import pandas as pd
 import json
-import sqlite3
+from sqlalchemy import create_engine, text
 from datetime import datetime
 import os
 
 # Configuration - Get API key from environment (GitHub will provide this)
 HERE_API_KEY = os.environ.get('HERE_API_KEY')
+DB_CONNECTION_STRING = os.environ.get('DB_CONNECTION_STRING')
 BBOX = (101.67, 3.13, 101.70, 3.16)  # Kuala Lumpur
 LOCATION_NAME = "Kuala_Lumpur"
-DB_NAME = "traffic_historical.db"
 
 # API Endpoints
 TRAFFIC_FLOW_URL = "https://data.traffic.hereapi.com/v7/flow"
@@ -111,57 +111,33 @@ def parse_incidents_to_dataframe(incidents_data):
     
     return pd.DataFrame(records)
 
-def save_to_sqlite(flow_df, incidents_df, db_name='traffic_historical.db'):
-    """Save to SQLite database with proper schema handling"""
-    conn = sqlite3.connect(db_name)
-    
+def save_to_postgres(flow_df, incidents_df, connection_string):
+    """Save to PostgreSQL database"""
+    if not connection_string:
+        print("❌ Error: DB_CONNECTION_STRING not found in environment variables.")
+        return
+
     try:
-        if flow_df is not None and len(flow_df) > 0:
-            cursor = conn.cursor()
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='traffic_flow'")
-            table_exists = cursor.fetchone() is not None
-            
-            if table_exists:
-                # Check if schema matches (has timestamp column)
-                cursor.execute("PRAGMA table_info(traffic_flow)")
-                columns = [row[1] for row in cursor.fetchall()]
-                if 'timestamp' not in columns:
-                    print("⚠ Warning: Old schema detected, dropping table...")
-                    cursor.execute("DROP TABLE traffic_flow")
-                    conn.commit()
-                    table_exists = False
-            
-            if_exists = 'replace' if not table_exists else 'append'
-            flow_df.to_sql('traffic_flow', conn, if_exists=if_exists, index=False)
-            
-            # Count total records
-            cursor.execute("SELECT COUNT(*) FROM traffic_flow")
-            total_records = cursor.fetchone()[0]
-            print(f"✓ Saved {len(flow_df)} new flow records (Total in DB: {total_records})")
+        engine = create_engine(connection_string)
         
-        if incidents_df is not None and len(incidents_df) > 0:
-            cursor = conn.cursor()
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='traffic_incidents'")
-            table_exists = cursor.fetchone() is not None
+        with engine.connect() as conn:
+            if flow_df is not None and len(flow_df) > 0:
+                flow_df.to_sql('traffic_flow', engine, if_exists='append', index=False)
+                
+                # Count total records
+                result = conn.execute(text("SELECT COUNT(*) FROM traffic_flow"))
+                total_records = result.scalar()
+                print(f"✓ Saved {len(flow_df)} new flow records (Total in DB: {total_records})")
             
-            if table_exists:
-                cursor.execute("PRAGMA table_info(traffic_incidents)")
-                columns = [row[1] for row in cursor.fetchall()]
-                if 'timestamp' not in columns:
-                    print("⚠ Warning: Old schema detected, dropping table...")
-                    cursor.execute("DROP TABLE traffic_incidents")
-                    conn.commit()
-                    table_exists = False
-            
-            if_exists = 'replace' if not table_exists else 'append'
-            incidents_df.to_sql('traffic_incidents', conn, if_exists=if_exists, index=False)
-            
-            cursor.execute("SELECT COUNT(*) FROM traffic_incidents")
-            total_records = cursor.fetchone()[0]
-            print(f"✓ Saved {len(incidents_df)} new incident records (Total in DB: {total_records})")
-    
-    finally:
-        conn.close()
+            if incidents_df is not None and len(incidents_df) > 0:
+                incidents_df.to_sql('traffic_incidents', engine, if_exists='append', index=False)
+                
+                result = conn.execute(text("SELECT COUNT(*) FROM traffic_incidents"))
+                total_records = result.scalar()
+                print(f"✓ Saved {len(incidents_df)} new incident records (Total in DB: {total_records})")
+                
+    except Exception as e:
+        print(f"❌ Error saving to database: {e}")
 
 def main():
     """Main collection function"""
@@ -195,7 +171,7 @@ def main():
         print(f"✓ Collected {len(incidents_df)} incident records")
     
     # Save to database
-    save_to_sqlite(flow_df, incidents_df, DB_NAME)
+    save_to_postgres(flow_df, incidents_df, DB_CONNECTION_STRING)
     print(f"\n✓ Completed at {datetime.now()}")
 
 if __name__ == "__main__":

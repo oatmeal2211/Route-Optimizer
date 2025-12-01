@@ -7,10 +7,6 @@ on:
     - cron: '0 * * * *'
   workflow_dispatch:  # Also allows you to click "Run workflow" button manually
 
-# CRITICAL: Add write permissions
-permissions:
-  contents: write  # Allows the workflow to push commits
-
 # WHAT to do when it runs
 jobs:
   collect-traffic:
@@ -20,20 +16,8 @@ jobs:
     # Step 1: Download your code from GitHub
     - name: Checkout repository
       uses: actions/checkout@v4
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}  # Use GitHub's built-in token
     
-    # Step 2: Download previous database from artifacts (if exists)
-    - name: Download previous database
-      uses: dawidd6/action-download-artifact@v2
-      continue-on-error: true
-      with:
-        workflow: collect_traffic.yml
-        name: traffic-database-latest
-        path: .
-        if_no_artifact_found: warn
-      
-    # Step 3: Install Python
+    # Step 2: Install Python
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
@@ -42,69 +26,12 @@ jobs:
     # Step 3: Install the libraries your script needs
     - name: Install dependencies
       run: |
-        pip install requests pandas geopandas pyarrow
+        pip install -r requirements.txt
         
     # Step 4: Run your traffic collection script
     - name: Run traffic data collection
       env:
-        HERE_API_KEY: ${{ secrets.HERE_API_KEY }}  # Use the secret you saved
+        HERE_API_KEY: ${{ secrets.HERE_API_KEY }}
+        DB_CONNECTION_STRING: ${{ secrets.DB_CONNECTION_STRING }}
       run: |
         python collect_traffic_github.py
-        
-    # Step 5: Check if data was created
-    - name: Check if data was created
-      run: |
-        if [ -f "traffic_historical.db" ]; then
-          echo "✓ Database file created successfully"
-          ls -lh traffic_historical.db
-        else
-          echo "⚠ Warning: Database file not found"
-        fi
-        
-    # Step 6: Upload timestamped backup
-    - name: Upload timestamped backup
-      uses: actions/upload-artifact@v4
-      with:
-        name: traffic-data-${{ github.run_number }}
-        path: traffic_historical.db
-        retention-days: 30
-        if-no-files-found: warn
-    
-    # Step 7: Upload latest database (overwrites previous)
-    - name: Upload latest database
-      uses: actions/upload-artifact@v4
-      with:
-        name: traffic-database-latest
-        path: traffic_historical.db
-        retention-days: 90
-        if-no-files-found: warn
-        
-    # Step 8: Commit database to repository (for easy access)
-    - name: Commit and push data
-      run: |
-        git config --local user.email "github-actions[bot]@users.noreply.github.com"
-        git config --local user.name "github-actions[bot]"
-        
-        # Pull latest changes with rebase to avoid conflicts
-        git pull --rebase origin main || true
-        
-        # Add database file
-        git add traffic_historical.db || true
-        
-        # Only commit if there are actual changes
-        if git diff --cached --quiet; then
-          echo "✓ No changes to commit - database unchanged"
-        else
-          git commit -m "📊 Update traffic data - $(date '+%Y-%m-%d %H:%M:%S UTC')"
-          
-          # Retry push up to 3 times in case of conflicts
-          for i in {1..3}; do
-            if git push origin main; then
-              echo "✓ Successfully pushed database to repository"
-              break
-            else
-              echo "⚠ Push failed, attempt $i of 3. Pulling and retrying..."
-              git pull --rebase origin main || true
-            fi
-          done
-        fi
