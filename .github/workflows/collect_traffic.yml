@@ -7,10 +7,15 @@ on:
     - cron: '0 * * * *'
   workflow_dispatch:  # Also allows you to click "Run workflow" button manually
 
+concurrency:
+  group: collect-traffic
+  cancel-in-progress: false
+
 # WHAT to do when it runs
 jobs:
   collect-traffic:
     runs-on: ubuntu-latest  # Use a Linux computer in the cloud
+    timeout-minutes: 20
     
     steps:
     # Step 1: Download your code from GitHub
@@ -19,19 +24,33 @@ jobs:
     
     # Step 2: Install Python
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.11'
+        cache: 'pip'
         
     # Step 3: Install the libraries your script needs
     - name: Install dependencies
       run: |
         pip install -r requirements.txt
+
+    - name: Validate configuration
+      env:
+        HERE_API_KEY: ${{ secrets.HERE_API_KEY }}
+        DB_CONNECTION_STRING: ${{ secrets.DB_CONNECTION_STRING }}
+      run: |
+        if [ -z "$HERE_API_KEY" ]; then echo "Missing HERE_API_KEY secret"; exit 1; fi
+        if [ -z "$DB_CONNECTION_STRING" ]; then echo "Missing DB_CONNECTION_STRING secret"; exit 1; fi
         
     # Step 4: Run your traffic collection script
     - name: Run traffic data collection
       env:
         HERE_API_KEY: ${{ secrets.HERE_API_KEY }}
         DB_CONNECTION_STRING: ${{ secrets.DB_CONNECTION_STRING }}
+        # Full KL bbox: west,south,east,north
+        BBOX: "101.55,3.00,101.83,3.30"
+        LOCATION_NAME: "Kuala_Lumpur_Full"
+        HTTP_TIMEOUT_SECONDS: "20"
+        HTTP_RETRIES_TOTAL: "5"
       run: |
         python collect_traffic_github.py

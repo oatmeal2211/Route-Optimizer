@@ -4,12 +4,54 @@ import json
 from sqlalchemy import create_engine, text
 from datetime import datetime
 import os
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 # Configuration - Get API key from environment (GitHub will provide this)
 HERE_API_KEY = os.environ.get('HERE_API_KEY')
 DB_CONNECTION_STRING = os.environ.get('DB_CONNECTION_STRING')
-BBOX = (101.67, 3.13, 101.70, 3.16)  # Kuala Lumpur
-LOCATION_NAME = "Kuala_Lumpur"
+
+# Default: wider Kuala Lumpur / Greater KL bounding box (west, south, east, north)
+# This matches the "full KL" bbox used in the notebooks for better geo-mapping coverage.
+DEFAULT_BBOX = (101.55, 3.00, 101.83, 3.30)
+
+def _parse_bbox_env(value: str):
+    """Parse env var like '101.55,3.00,101.83,3.30' into (west,south,east,north)."""
+    if not value:
+        return None
+    parts = [p.strip() for p in value.split(',')]
+    if len(parts) != 4:
+        raise ValueError("BBOX must have 4 comma-separated numbers: west,south,east,north")
+    west, south, east, north = (float(parts[0]), float(parts[1]), float(parts[2]), float(parts[3]))
+    return (west, south, east, north)
+
+# Optional overrides (lets you change bbox without editing code)
+BBOX = _parse_bbox_env(os.environ.get('BBOX')) or DEFAULT_BBOX
+LOCATION_NAME = os.environ.get('LOCATION_NAME') or "Kuala_Lumpur_Full"
+
+# HTTP behavior: be resilient to transient API/network issues.
+HTTP_TIMEOUT_SECONDS = float(os.environ.get('HTTP_TIMEOUT_SECONDS') or 20)
+HTTP_RETRIES_TOTAL = int(os.environ.get('HTTP_RETRIES_TOTAL') or 5)
+HTTP_RETRY_BACKOFF = float(os.environ.get('HTTP_RETRY_BACKOFF') or 0.6)
+
+def _requests_session():
+    session = requests.Session()
+    retry = Retry(
+        total=HTTP_RETRIES_TOTAL,
+        connect=HTTP_RETRIES_TOTAL,
+        read=HTTP_RETRIES_TOTAL,
+        status=HTTP_RETRIES_TOTAL,
+        backoff_factor=HTTP_RETRY_BACKOFF,
+        status_forcelist=(429, 500, 502, 503, 504),
+        allowed_methods=("GET",),
+        raise_on_status=False,
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    return session
+
+_SESSION = _requests_session()
 
 # API Endpoints
 TRAFFIC_FLOW_URL = "https://data.traffic.hereapi.com/v7/flow"
@@ -24,12 +66,12 @@ def fetch_traffic_flow(bbox, api_key):
     }
     
     print(f"Fetching traffic flow data...")
-    response = requests.get(TRAFFIC_FLOW_URL, params=params)
+    response = _SESSION.get(TRAFFIC_FLOW_URL, params=params, timeout=HTTP_TIMEOUT_SECONDS)
     
     if response.status_code == 200:
         return response.json()
     else:
-        print(f"Error: {response.status_code}")
+        print(f"Error fetching flow: HTTP {response.status_code}")
         return None
 
 def fetch_traffic_incidents(bbox, api_key):
@@ -41,7 +83,7 @@ def fetch_traffic_incidents(bbox, api_key):
     }
     
     print(f"Fetching traffic incidents...")
-    response = requests.get(TRAFFIC_INCIDENTS_URL, params=params)
+    response = _SESSION.get(TRAFFIC_INCIDENTS_URL, params=params, timeout=HTTP_TIMEOUT_SECONDS)
     
     if response.status_code == 200:
         return response.json()
@@ -146,6 +188,15 @@ def main():
     print(f"\n{'='*60}")
     print(f"Collecting data at: {timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"{'='*60}\n")
+
+    print(f"Location: {LOCATION_NAME}")
+    print(f"BBox (west,south,east,north): {BBOX}")
+    if not HERE_API_KEY:
+        print("❌ Error: HERE_API_KEY not found in environment variables.")
+        return
+    if not DB_CONNECTION_STRING:
+        print("❌ Error: DB_CONNECTION_STRING not found in environment variables.")
+        return
     
     # Fetch data
     flow_data = fetch_traffic_flow(BBOX, HERE_API_KEY)
