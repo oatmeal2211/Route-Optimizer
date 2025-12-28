@@ -4,3 +4,11 @@ sqlalchemy
 psycopg2-binary
 python-dotenv
 holidays
+streamlit
+streamlit-folium
+folium
+ortools
+osmnx
+networkx
+scikit-learn
+geopy
