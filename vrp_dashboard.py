@@ -19,9 +19,12 @@ import pickle
 from pathlib import Path
 import time
 from functools import lru_cache
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import ast
 import json
+
+# Malaysia timezone (UTC+8)
+MYT = timezone(timedelta(hours=8))
 
 # ============================================================================
 # PAGE CONFIGURATION
@@ -318,30 +321,30 @@ def get_auto_traffic_scenario():
     Uses Malaysia timezone (UTC+8).
     
     Returns:
-        tuple: (scenario_name, speed_factor, congestion_mult)
+        tuple: (scenario_name, speed_factor, congestion_mult, malaysia_time)
     """
-    # Get current hour in Malaysia timezone (UTC+8)
-    # Note: Using local time - adjust if server is in different timezone
-    now = datetime.now()
-    current_hour = now.hour
+    # Get current time in Malaysia timezone (UTC+8)
+    now_utc = datetime.now(timezone.utc)
+    now_myt = now_utc.astimezone(MYT)
+    current_hour = now_myt.hour
     
     # Match to appropriate scenario
     if 0 <= current_hour < 6:
-        return "Night (12AM-6AM)", 1.0, 0.1
+        return "Night (12AM-6AM)", 1.0, 0.1, now_myt
     elif 7 <= current_hour < 10:
-        return "Morning Peak (7AM-10AM)", 0.45, 1.5
+        return "Morning Peak (7AM-10AM)", 0.45, 1.5, now_myt
     elif 10 <= current_hour < 16:
-        return "Midday (10AM-4PM)", 0.70, 0.6
+        return "Midday (10AM-4PM)", 0.70, 0.6, now_myt
     elif 17 <= current_hour < 20:
-        return "Evening Peak (5PM-8PM)", 0.40, 1.8
+        return "Evening Peak (5PM-8PM)", 0.40, 1.8, now_myt
     elif 20 <= current_hour < 24:
-        return "Late Evening (8PM-12AM)", 0.85, 0.3
+        return "Late Evening (8PM-12AM)", 0.85, 0.3, now_myt
     else:
         # Transition hours (6AM, 4-5PM)
         if current_hour == 6:
-            return "Morning Peak (7AM-10AM)", 0.55, 1.2  # Transition
+            return "Morning Peak (7AM-10AM)", 0.55, 1.2, now_myt  # Transition
         else:  # 16
-            return "Evening Peak (5PM-8PM)", 0.55, 1.4  # Transition
+            return "Evening Peak (5PM-8PM)", 0.55, 1.4, now_myt  # Transition
 
 def get_traffic_segments_for_edge(traffic_df, u_lon, u_lat, v_lon, v_lat, search_radius=0.002):
     """
@@ -1438,9 +1441,8 @@ def main():
     
     # Handle auto time detection
     if TRAFFIC_SCENARIOS[traffic_scenario].get('auto', False):
-        detected_scenario, speed_factor, congestion_mult = get_auto_traffic_scenario()
-        now = datetime.now()
-        st.sidebar.info(f"🕐 Current time: {now.strftime('%I:%M %p')}")
+        detected_scenario, speed_factor, congestion_mult, myt_time = get_auto_traffic_scenario()
+        st.sidebar.info(f"🕐 Malaysia Time: {myt_time.strftime('%I:%M %p')} (UTC+8)")
         st.sidebar.caption(f"Detected: {detected_scenario}")
     else:
         speed_factor = TRAFFIC_SCENARIOS[traffic_scenario]['speed_factor']
