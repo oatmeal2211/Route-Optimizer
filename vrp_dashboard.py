@@ -19,6 +19,9 @@ import pickle
 from pathlib import Path
 import time
 from functools import lru_cache
+from datetime import datetime
+import ast
+import json
 
 # ============================================================================
 # PAGE CONFIGURATION
@@ -151,11 +154,12 @@ ROUTING_ALGORITHMS = {
 }
 
 TRAFFIC_SCENARIOS = {
-    "Night (12AM-6AM)": {"speed_factor": 1.0, "congestion_mult": 0.1, "icon": "🌙"},
-    "Morning Peak (7AM-10AM)": {"speed_factor": 0.45, "congestion_mult": 1.5, "icon": "🌅"},
-    "Midday (10AM-4PM)": {"speed_factor": 0.70, "congestion_mult": 0.6, "icon": "☀️"},
-    "Evening Peak (5PM-8PM)": {"speed_factor": 0.40, "congestion_mult": 1.8, "icon": "🌆"},
-    "Late Evening (8PM-12AM)": {"speed_factor": 0.85, "congestion_mult": 0.3, "icon": "🌃"},
+    "🔄 Auto (Current Time)": {"speed_factor": None, "congestion_mult": None, "icon": "🔄", "auto": True},
+    "Night (12AM-6AM)": {"speed_factor": 1.0, "congestion_mult": 0.1, "icon": "🌙", "hours": (0, 6)},
+    "Morning Peak (7AM-10AM)": {"speed_factor": 0.45, "congestion_mult": 1.5, "icon": "🌅", "hours": (7, 10)},
+    "Midday (10AM-4PM)": {"speed_factor": 0.70, "congestion_mult": 0.6, "icon": "☀️", "hours": (10, 16)},
+    "Evening Peak (5PM-8PM)": {"speed_factor": 0.40, "congestion_mult": 1.8, "icon": "🌆", "hours": (17, 20)},
+    "Late Evening (8PM-12AM)": {"speed_factor": 0.85, "congestion_mult": 0.3, "icon": "🌃", "hours": (20, 24)},
 }
 
 TIME_WINDOW_PRESETS = {
@@ -168,7 +172,8 @@ TIME_WINDOW_PRESETS = {
     "Final slot (180-240 min)": (180, 240),
 }
 
-CONGESTION_ZONES = {
+# Static fallback congestion zones (used when historical data unavailable)
+STATIC_CONGESTION_ZONES = {
     'bukit_bintang': {
         'center': (101.7105, 3.1465),
         'radius_m': 800,
@@ -200,6 +205,180 @@ CONGESTION_ZONES = {
         'description': 'Free-flow Outskirts'
     }
 }
+
+# Dynamic congestion zones - will be populated from historical data
+CONGESTION_ZONES = {}
+
+# ============================================================================
+# HISTORICAL TRAFFIC DATA LOADING
+# ============================================================================
+
+@st.cache_data(ttl=3600)
+def load_historical_traffic_data():
+    """Load and parse historical traffic data from CSV."""
+    try:
+        traffic_file = Path(__file__).parent / "traffic_flow_Kuala_Lumpur.csv"
+        if not traffic_file.exists():
+            return None, None
+        
+        df = pd.read_csv(traffic_file)
+        
+        # Parse geometry strings into coordinate lists
+        def parse_geometry(geom_str):
+            try:
+                return ast.literal_eval(geom_str)
+            except:
+                return []
+        
+        df['coords'] = df['geometry'].apply(parse_geometry)
+        
+        # Calculate centroid for each road segment
+        def get_centroid(coords):
+            if not coords:
+                return None, None
+            lons = [c[0] for c in coords]
+            lats = [c[1] for c in coords]
+            return np.mean(lons), np.mean(lats)
+        
+        df['centroid'] = df['coords'].apply(get_centroid)
+        df['centroid_lon'] = df['centroid'].apply(lambda x: x[0] if x else None)
+        df['centroid_lat'] = df['centroid'].apply(lambda x: x[1] if x else None)
+        
+        # Drop rows with missing data
+        df = df.dropna(subset=['centroid_lon', 'centroid_lat', 'jam_factor', 'speed'])
+        
+        return df, traffic_file
+    except Exception as e:
+        st.warning(f"Could not load historical traffic data: {e}")
+        return None, None
+
+def build_dynamic_congestion_zones(traffic_df, grid_size=0.005):
+    """
+    Build dynamic congestion zones from historical traffic data.
+    Creates a grid-based congestion map from real traffic measurements.
+    
+    Args:
+        traffic_df: DataFrame with traffic flow data
+        grid_size: Size of grid cells in degrees (~500m)
+    
+    Returns:
+        dict: Dynamic congestion zones with real data
+    """
+    if traffic_df is None or traffic_df.empty:
+        return STATIC_CONGESTION_ZONES.copy()
+    
+    zones = {}
+    
+    # Group traffic data by grid cells
+    traffic_df['grid_lon'] = (traffic_df['centroid_lon'] / grid_size).round() * grid_size
+    traffic_df['grid_lat'] = (traffic_df['centroid_lat'] / grid_size).round() * grid_size
+    
+    # Aggregate by grid cell
+    grid_stats = traffic_df.groupby(['grid_lon', 'grid_lat']).agg({
+        'jam_factor': 'mean',
+        'speed': 'mean',
+        'location_description': 'first',
+        'confidence': 'mean'
+    }).reset_index()
+    
+    # Convert jam_factor (0-10) to congestion_factor
+    # jam_factor 0 = free flow = congestion_factor 0.7
+    # jam_factor 5 = moderate = congestion_factor 1.5
+    # jam_factor 10 = standstill = congestion_factor 3.0
+    def jam_to_congestion(jam):
+        if jam <= 1:
+            return 0.7 + (jam / 1) * 0.3  # 0.7 to 1.0
+        elif jam <= 3:
+            return 1.0 + ((jam - 1) / 2) * 0.5  # 1.0 to 1.5
+        elif jam <= 6:
+            return 1.5 + ((jam - 3) / 3) * 0.7  # 1.5 to 2.2
+        else:
+            return 2.2 + ((jam - 6) / 4) * 0.8  # 2.2 to 3.0
+    
+    grid_stats['congestion_factor'] = grid_stats['jam_factor'].apply(jam_to_congestion)
+    
+    # Create zones from grid cells
+    for idx, row in grid_stats.iterrows():
+        zone_id = f"grid_{idx}"
+        zones[zone_id] = {
+            'center': (row['grid_lon'], row['grid_lat']),
+            'radius_m': grid_size * 111000 / 2,  # Half grid size in meters
+            'congestion_factor': row['congestion_factor'],
+            'jam_factor': row['jam_factor'],
+            'avg_speed': row['speed'],
+            'description': row['location_description'][:50] if pd.notna(row['location_description']) else 'Traffic Zone',
+            'from_historical': True
+        }
+    
+    return zones
+
+def get_auto_traffic_scenario():
+    """
+    Automatically determine traffic scenario based on current time.
+    Uses Malaysia timezone (UTC+8).
+    
+    Returns:
+        tuple: (scenario_name, speed_factor, congestion_mult)
+    """
+    # Get current hour in Malaysia timezone (UTC+8)
+    # Note: Using local time - adjust if server is in different timezone
+    now = datetime.now()
+    current_hour = now.hour
+    
+    # Match to appropriate scenario
+    if 0 <= current_hour < 6:
+        return "Night (12AM-6AM)", 1.0, 0.1
+    elif 7 <= current_hour < 10:
+        return "Morning Peak (7AM-10AM)", 0.45, 1.5
+    elif 10 <= current_hour < 16:
+        return "Midday (10AM-4PM)", 0.70, 0.6
+    elif 17 <= current_hour < 20:
+        return "Evening Peak (5PM-8PM)", 0.40, 1.8
+    elif 20 <= current_hour < 24:
+        return "Late Evening (8PM-12AM)", 0.85, 0.3
+    else:
+        # Transition hours (6AM, 4-5PM)
+        if current_hour == 6:
+            return "Morning Peak (7AM-10AM)", 0.55, 1.2  # Transition
+        else:  # 16
+            return "Evening Peak (5PM-8PM)", 0.55, 1.4  # Transition
+
+def get_traffic_segments_for_edge(traffic_df, u_lon, u_lat, v_lon, v_lat, search_radius=0.002):
+    """
+    Find traffic segments near an edge and return average jam factor.
+    
+    Args:
+        traffic_df: Historical traffic DataFrame
+        u_lon, u_lat: Start node coordinates
+        v_lon, v_lat: End node coordinates  
+        search_radius: Search radius in degrees (~200m)
+    
+    Returns:
+        float: Average jam factor (0-10) or None if no data
+    """
+    if traffic_df is None or traffic_df.empty:
+        return None
+    
+    # Edge midpoint
+    mid_lon = (u_lon + v_lon) / 2
+    mid_lat = (u_lat + v_lat) / 2
+    
+    # Find nearby traffic segments
+    dist = np.sqrt(
+        (traffic_df['centroid_lon'] - mid_lon)**2 + 
+        (traffic_df['centroid_lat'] - mid_lat)**2
+    )
+    
+    nearby = traffic_df[dist <= search_radius]
+    
+    if nearby.empty:
+        return None
+    
+    # Weight by confidence and proximity
+    weights = nearby['confidence'] * (1 / (dist[nearby.index] + 0.0001))
+    if weights.sum() > 0:
+        return (nearby['jam_factor'] * weights).sum() / weights.sum()
+    return nearby['jam_factor'].mean()
 
 # Traffic model parameters
 URBAN_EFFICIENCY_FACTOR = 0.65
@@ -893,9 +1072,44 @@ def get_congestion_label(congestion_level):
     else:
         return 'Severe Congestion'
 
-def create_route_map(locations_df, routes, center_lat, center_lon, time_matrix=None, distance_matrix=None, speed_factor=1.0, G=None, location_nodes=None, selected_vehicles=None, show_direction=True):
+def create_route_map(locations_df, routes, center_lat, center_lon, time_matrix=None, distance_matrix=None, speed_factor=1.0, G=None, location_nodes=None, selected_vehicles=None, show_direction=True, traffic_df=None, show_traffic_overlay=False):
     """Create a Folium map with routes and traffic congestion indicators."""
     m = folium.Map(location=[center_lat, center_lon], zoom_start=13)
+    
+    # Draw historical traffic overlay if enabled
+    if show_traffic_overlay and traffic_df is not None:
+        def jam_to_color(jam_factor):
+            """Convert jam factor (0-10) to color."""
+            if jam_factor <= 1:
+                return '#00C853'  # Green - free flow
+            elif jam_factor <= 3:
+                return '#7FFF00'  # Light green
+            elif jam_factor <= 5:
+                return '#FFFF00'  # Yellow - moderate
+            elif jam_factor <= 7:
+                return '#FF8C00'  # Orange - heavy
+            else:
+                return '#FF0000'  # Red - severe
+        
+        # Create a feature group for traffic overlay
+        traffic_layer = folium.FeatureGroup(name="Historical Traffic", show=True)
+        
+        for _, row in traffic_df.iterrows():
+            if row['coords'] and len(row['coords']) >= 2:
+                # Convert coords to [lat, lon] format
+                path_coords = [[c[1], c[0]] for c in row['coords']]
+                color = jam_to_color(row['jam_factor'])
+                
+                folium.PolyLine(
+                    path_coords,
+                    weight=4,
+                    color=color,
+                    opacity=0.6,
+                    popup=f"{row['location_description']}<br>Jam: {row['jam_factor']:.1f}<br>Speed: {row['speed']:.1f} m/s"
+                ).add_to(traffic_layer)
+        
+        traffic_layer.add_to(m)
+        folium.LayerControl().add_to(m)
     
     # Counters for debugging
     road_paths_drawn = 0
@@ -1206,13 +1420,42 @@ def main():
     
     # Traffic Configuration
     st.sidebar.subheader("🚦 Traffic Scenario")
+    
+    # Load historical traffic data
+    traffic_df, traffic_file = load_historical_traffic_data()
+    
+    # Show data source info
+    if traffic_df is not None:
+        st.sidebar.success(f"📊 Historical data: {len(traffic_df)} road segments")
+    else:
+        st.sidebar.warning("⚠️ Using static traffic model")
+    
     traffic_scenario = st.sidebar.selectbox(
         "Time of Day",
         list(TRAFFIC_SCENARIOS.keys()),
         format_func=lambda x: f"{TRAFFIC_SCENARIOS[x]['icon']} {x}"
     )
-    speed_factor = TRAFFIC_SCENARIOS[traffic_scenario]['speed_factor']
+    
+    # Handle auto time detection
+    if TRAFFIC_SCENARIOS[traffic_scenario].get('auto', False):
+        detected_scenario, speed_factor, congestion_mult = get_auto_traffic_scenario()
+        now = datetime.now()
+        st.sidebar.info(f"🕐 Current time: {now.strftime('%I:%M %p')}")
+        st.sidebar.caption(f"Detected: {detected_scenario}")
+    else:
+        speed_factor = TRAFFIC_SCENARIOS[traffic_scenario]['speed_factor']
+        congestion_mult = TRAFFIC_SCENARIOS[traffic_scenario].get('congestion_mult', 1.0)
+    
     st.sidebar.metric("Speed Factor", f"{speed_factor*100:.0f}%")
+    
+    # Build dynamic congestion zones from historical data
+    global CONGESTION_ZONES
+    if traffic_df is not None:
+        CONGESTION_ZONES = build_dynamic_congestion_zones(traffic_df)
+        st.sidebar.caption(f"📍 {len(CONGESTION_ZONES)} dynamic zones from data")
+    else:
+        CONGESTION_ZONES = STATIC_CONGESTION_ZONES.copy()
+        st.sidebar.caption(f"📍 {len(CONGESTION_ZONES)} static zones")
     
     # Main content area
     col1, col2 = st.columns([1, 1])
@@ -1669,6 +1912,7 @@ def main():
             
             with map_col2:
                 show_direction = st.checkbox("🧭 Show direction arrows", value=True, key="show_direction")
+                show_traffic_overlay = st.checkbox("📊 Show historical traffic", value=False, key="show_traffic_overlay")
             
             st.caption("🚦 Outer band = Vehicle color | Inner color = Traffic (Green=Free → Red=Heavy)")
             
@@ -1703,7 +1947,9 @@ def main():
                 G=graph_for_map,
                 location_nodes=location_nodes,
                 selected_vehicles=selected_vehicle_ids if selected_vehicle_ids else None,
-                show_direction=show_direction
+                show_direction=show_direction,
+                traffic_df=traffic_df,
+                show_traffic_overlay=show_traffic_overlay
             )
             
             # Show routing debug info
