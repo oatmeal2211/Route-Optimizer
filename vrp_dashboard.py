@@ -796,15 +796,13 @@ def build_hybrid_cost_matrix(G, location_nodes, speed_factor, alpha=0.5, apply_a
 
 def solve_static_vrp(G, locations, demands, service_times_s, vehicle_capacities,
                      time_windows_s, max_duration_s, num_vehicles, speed_factor=1.0):
-    """Solve VRP using distance optimization (but display traffic-adjusted travel times)."""
+    """Solve VRP using distance optimization with traffic-adjusted time constraints."""
     n = len(locations)
     distance_matrix = build_distance_matrix(G, locations)
     
-    # Build time matrix with speed_factor=1.0 for constraints (free-flow for time windows)
-    constraint_time_matrix = build_traffic_time_matrix(G, locations, speed_factor=1.0, apply_asymmetric=True)
-    
-    # Build traffic-adjusted time matrix for DISPLAY (so static and dynamic can be compared fairly)
-    display_time_matrix = build_traffic_time_matrix(G, locations, speed_factor=speed_factor, apply_asymmetric=True)
+    # Build traffic-adjusted time matrix for BOTH constraints AND display
+    # This ensures max_duration and time windows are enforced with realistic traffic times
+    time_matrix = build_traffic_time_matrix(G, locations, speed_factor=speed_factor, apply_asymmetric=True)
     
     manager = pywrapcp.RoutingIndexManager(n, num_vehicles, 0)
     routing = pywrapcp.RoutingModel(manager)
@@ -816,11 +814,11 @@ def solve_static_vrp(G, locations, demands, service_times_s, vehicle_capacities,
     
     distance_callback_idx = routing.RegisterTransitCallback(distance_callback)
     
-    # Use free-flow time matrix for time window constraints
+    # Use traffic-adjusted time matrix for time constraints
     def time_callback(from_index, to_index):
         from_node = manager.IndexToNode(from_index)
         to_node = manager.IndexToNode(to_index)
-        return constraint_time_matrix[from_node][to_node] + service_times_s[from_node]
+        return time_matrix[from_node][to_node] + service_times_s[from_node]
     
     time_callback_idx = routing.RegisterTransitCallback(time_callback)
     
@@ -863,8 +861,8 @@ def solve_static_vrp(G, locations, demands, service_times_s, vehicle_capacities,
             route.append(manager.IndexToNode(index))
             if len(route) > 2 or any(idx != 0 for idx in route):
                 routes.append(route)
-        # Return traffic-adjusted time matrix for display (fair comparison with dynamic)
-        return {'routes': routes, 'feasible': True, 'distance_matrix': distance_matrix, 'time_matrix': display_time_matrix}
+        # Return traffic-adjusted time matrix for display
+        return {'routes': routes, 'feasible': True, 'distance_matrix': distance_matrix, 'time_matrix': time_matrix}
     
     return {'routes': [], 'feasible': False}
 
