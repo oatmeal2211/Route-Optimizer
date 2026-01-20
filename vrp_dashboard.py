@@ -32,7 +32,7 @@ MYT = timezone(timedelta(hours=8))
 
 st.set_page_config(
     page_title="VRP Optimizer",
-    page_icon="🚚",
+    page_icon="",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -157,12 +157,12 @@ ROUTING_ALGORITHMS = {
 }
 
 TRAFFIC_SCENARIOS = {
-    "🔄 Auto (Current Time)": {"speed_factor": None, "congestion_mult": None, "icon": "🔄", "auto": True},
-    "Night (12AM-6AM)": {"speed_factor": 1.0, "congestion_mult": 0.1, "icon": "🌙", "hours": (0, 6)},
-    "Morning Peak (7AM-10AM)": {"speed_factor": 0.45, "congestion_mult": 1.5, "icon": "🌅", "hours": (7, 10)},
-    "Midday (10AM-4PM)": {"speed_factor": 0.70, "congestion_mult": 0.6, "icon": "☀️", "hours": (10, 16)},
-    "Evening Peak (5PM-8PM)": {"speed_factor": 0.40, "congestion_mult": 1.8, "icon": "🌆", "hours": (17, 20)},
-    "Late Evening (8PM-12AM)": {"speed_factor": 0.85, "congestion_mult": 0.3, "icon": "🌃", "hours": (20, 24)},
+    "Auto (Current Time)": {"speed_factor": None, "congestion_mult": None, "icon": "", "auto": True},
+    "Night (12AM-6AM)": {"speed_factor": 1.0, "congestion_mult": 0.1, "icon": "", "hours": (0, 6)},
+    "Morning Peak (7AM-10AM)": {"speed_factor": 0.45, "congestion_mult": 1.5, "icon": "", "hours": (7, 10)},
+    "Midday (10AM-4PM)": {"speed_factor": 0.70, "congestion_mult": 0.6, "icon": "", "hours": (10, 16)},
+    "Evening Peak (5PM-8PM)": {"speed_factor": 0.40, "congestion_mult": 1.8, "icon": "", "hours": (17, 20)},
+    "Late Evening (8PM-12AM)": {"speed_factor": 0.85, "congestion_mult": 0.3, "icon": "", "hours": (20, 24)},
 }
 
 TIME_WINDOW_PRESETS = {
@@ -501,7 +501,7 @@ def load_road_network():
     except Exception as e:
         # Fall back to pyrosm if download fails
         if pyrosm_graph is not None:
-            return pyrosm_graph, f"Using cached graph ({pyrosm_graph.number_of_nodes()} nodes) - ⚠️ may have overpass inaccuracies"
+            return pyrosm_graph, f"Using cached graph ({pyrosm_graph.number_of_nodes()} nodes) - may have overpass inaccuracies"
         return None, str(e)
 
 @st.cache_data
@@ -1192,13 +1192,13 @@ def create_route_map(locations_df, routes, center_lat, center_lon, time_matrix=N
         if row.get('is_depot', False):
             folium.Marker(
                 [row['lat'], row['lon']],
-                popup=f"🏭 {row['name']} (Depot)",
+                popup=f"{row['name']} (Depot)",
                 icon=folium.Icon(color='black', icon='home')
             ).add_to(m)
         else:
             folium.Marker(
                 [row['lat'], row['lon']],
-                popup=f"📦 {row['name']}<br>Demand: {row.get('demand', 0)}",
+                popup=f"{row['name']}<br>Demand: {row.get('demand', 0)}",
                 icon=folium.Icon(color='gray', icon='info-sign')
             ).add_to(m)
     
@@ -1337,7 +1337,7 @@ def create_route_map(locations_df, routes, center_lat, center_lon, time_matrix=N
                         color=congestion_color,
                         opacity=0.8,
                         dash_array='10, 10',
-                        popup=f"⚠️ {from_loc['name'][:15]} → {to_loc['name'][:15]} (estimated)"
+                        popup=f"{from_loc['name'][:15]} -> {to_loc['name'][:15]} (estimated)"
                     ).add_to(m)
                 else:
                     # Multi-vehicle: vehicle-colored border + traffic color
@@ -1354,7 +1354,7 @@ def create_route_map(locations_df, routes, center_lat, center_lon, time_matrix=N
                         color=congestion_color,
                         opacity=0.8,
                         dash_array='10, 10',
-                        popup=f"⚠️ Vehicle {v_id + 1}: {from_loc['name'][:15]} → {to_loc['name'][:15]} (estimated)"
+                        popup=f"Vehicle {v_id + 1}: {from_loc['name'][:15]} -> {to_loc['name'][:15]} (estimated)"
                     ).add_to(m)
                 
                 # Collect coords for direction arrows
@@ -1385,7 +1385,7 @@ def create_route_map(locations_df, routes, center_lat, center_lon, time_matrix=N
 
 def main():
     # Header
-    st.markdown('<p class="main-header">🚚 VRP Optimizer Dashboard</p>', unsafe_allow_html=True)
+    st.markdown('<p class="main-header">VRP Optimizer Dashboard</p>', unsafe_allow_html=True)
     st.markdown("*Optimize your delivery routes with multiple algorithms*")
     
     # Load road network
@@ -1397,20 +1397,20 @@ def main():
         return
     
     graph_nodes = get_graph_nodes(G)
-    st.sidebar.success(f"✅ Road network: {len(graph_nodes):,} nodes")
-    st.sidebar.caption(f"📂 {load_status}")
+    st.sidebar.success(f"Road network: {len(graph_nodes):,} nodes")
+    st.sidebar.caption(f"{load_status}")
     
     # Sidebar Configuration
-    st.sidebar.header("⚙️ Configuration")
+    st.sidebar.header("Configuration")
     
     # Fleet Configuration
-    st.sidebar.subheader("🚛 Fleet Settings")
+    st.sidebar.subheader("Fleet Settings")
     num_vehicles = st.sidebar.slider("Number of Vehicles", 1, 10, 3)
     vehicle_capacity = st.sidebar.slider("Vehicle Capacity (units)", 20, 500, 100, step=10)
     max_duration = st.sidebar.slider("Max Route Duration (minutes)", 60, 480, 240, step=30)
     
     # Algorithm Selection
-    st.sidebar.subheader("🧮 Algorithm")
+    st.sidebar.subheader("Algorithm")
     algorithm = st.sidebar.selectbox("Routing Algorithm", list(ROUTING_ALGORITHMS.keys()))
     algo_info = ROUTING_ALGORITHMS[algorithm]
     st.sidebar.info(algo_info['description'])
@@ -1422,16 +1422,16 @@ def main():
                                   help="α=0: Pure traffic | α=1: Pure distance")
     
     # Traffic Configuration
-    st.sidebar.subheader("🚦 Traffic Scenario")
+    st.sidebar.subheader("Traffic Scenario")
     
     # Load historical traffic data
     traffic_df, traffic_file = load_historical_traffic_data()
     
     # Show data source info
     if traffic_df is not None:
-        st.sidebar.success(f"📊 Historical data: {len(traffic_df)} road segments")
+        st.sidebar.success(f"Historical data: {len(traffic_df)} road segments")
     else:
-        st.sidebar.warning("⚠️ Using static traffic model")
+        st.sidebar.warning("Using static traffic model")
     
     traffic_scenario = st.sidebar.selectbox(
         "Time of Day",
@@ -1442,7 +1442,7 @@ def main():
     # Handle auto time detection
     if TRAFFIC_SCENARIOS[traffic_scenario].get('auto', False):
         detected_scenario, speed_factor, congestion_mult, myt_time = get_auto_traffic_scenario()
-        st.sidebar.info(f"🕐 Malaysia Time: {myt_time.strftime('%I:%M %p')} (UTC+8)")
+        st.sidebar.info(f"Malaysia Time: {myt_time.strftime('%I:%M %p')} (UTC+8)")
         st.sidebar.caption(f"Detected: {detected_scenario}")
     else:
         speed_factor = TRAFFIC_SCENARIOS[traffic_scenario]['speed_factor']
@@ -1454,23 +1454,23 @@ def main():
     global CONGESTION_ZONES
     if traffic_df is not None:
         CONGESTION_ZONES = build_dynamic_congestion_zones(traffic_df)
-        st.sidebar.caption(f"📍 {len(CONGESTION_ZONES)} dynamic zones from data")
+        st.sidebar.caption(f"{len(CONGESTION_ZONES)} dynamic zones from data")
     else:
         CONGESTION_ZONES = STATIC_CONGESTION_ZONES.copy()
-        st.sidebar.caption(f"📍 {len(CONGESTION_ZONES)} static zones")
+        st.sidebar.caption(f"{len(CONGESTION_ZONES)} static zones")
     
     # Main content area
     col1, col2 = st.columns([1, 1])
     
     with col1:
-        st.subheader("📍 Delivery Locations")
+        st.subheader("Delivery Locations")
         
         # Preset selection
         preset_options = ["-- Custom --"] + list(PRESET_LOCATIONS.keys())
         preset = st.selectbox("Load Preset", preset_options, key="preset_select")
         
         # Load preset button
-        if st.button("🔄 Load Selected Preset", key="load_preset_btn"):
+        if st.button("Load Selected Preset", key="load_preset_btn"):
             if preset != "-- Custom --":
                 locations_data = []
                 for loc in PRESET_LOCATIONS[preset]:
@@ -1493,7 +1493,7 @@ def main():
         
         # Editable dataframe with add/delete rows
         st.markdown("**Edit locations, demands, and time windows:**")
-        st.caption("💡 Click + to add rows, select rows and press Delete to remove")
+        st.caption("Click + to add rows, select rows and press Delete to remove")
         
         edited_df = st.data_editor(
             st.session_state.locations_df,
@@ -1516,19 +1516,19 @@ def main():
         st.session_state.locations_df = edited_df
         
         # Search and add location form (like Google Maps)
-        with st.expander("🔍 Search & Add Location", expanded=True):
+        with st.expander("Search & Add Location", expanded=True):
             st.markdown("**Search by name (like Google Maps)**")
             
             search_col1, search_col2 = st.columns([3, 1])
             with search_col1:
                 search_query = st.text_input(
-                    "🔍 Search location", 
+                    "Search location", 
                     placeholder="e.g., KLCC, Mid Valley, Sunway Pyramid...",
                     key="location_search",
                     label_visibility="collapsed"
                 )
             with search_col2:
-                search_btn = st.button("🔍 Search", key="search_btn", use_container_width=True)
+                search_btn = st.button("Search", key="search_btn", use_container_width=True)
             
             # Search results
             if search_btn and search_query:
@@ -1551,7 +1551,7 @@ def main():
                     
                     result_col1, result_col2 = st.columns([4, 1])
                     with result_col1:
-                        st.caption(f"📍 {display_addr}")
+                        st.caption(f"{display_addr}")
                         st.caption(f"   ({lat:.4f}, {lon:.4f})")
                     with result_col2:
                         if st.button("Add", key=f"add_result_{i}"):
@@ -1604,9 +1604,9 @@ def main():
             depot_count = edited_df['is_depot'].sum() if 'is_depot' in edited_df.columns else 0
             
             if depot_count == 0:
-                st.warning("⚠️ No depot selected! Mark one location as depot.")
+                st.warning("No depot selected! Mark one location as depot.")
             elif depot_count > 1:
-                st.warning("⚠️ Multiple depots selected! Only the first will be used.")
+                st.warning("Multiple depots selected! Only the first will be used.")
             
             st.markdown(f"""
             <div class="info-box">
@@ -1616,7 +1616,7 @@ def main():
             """, unsafe_allow_html=True)
     
     with col2:
-        st.subheader("🗺️ Location Preview")
+        st.subheader("Location Preview")
         
         # Preview map
         if not edited_df.empty:
@@ -1640,20 +1640,20 @@ def main():
     
     solve_col1, solve_col2, solve_col3 = st.columns([1, 2, 1])
     with solve_col2:
-        solve_button = st.button("🚀 Solve VRP", use_container_width=True, type="primary")
+        solve_button = st.button("Solve VRP", use_container_width=True, type="primary")
     
     if solve_button:
         # Validate inputs first
         if edited_df.empty:
-            st.error("❌ No locations defined. Add locations first.")
+            st.error("No locations defined. Add locations first.")
             st.stop()
         
         if 'is_depot' not in edited_df.columns or edited_df['is_depot'].sum() == 0:
-            st.error("❌ No depot selected. Mark one location as depot (check the 'Depot?' box).")
+            st.error("No depot selected. Mark one location as depot (check the 'Depot?' box).")
             st.stop()
         
         if len(edited_df) < 2:
-            st.error("❌ Need at least 2 locations (1 depot + 1 delivery).")
+            st.error("Need at least 2 locations (1 depot + 1 delivery).")
             st.stop()
         
         # Reorder so depot is first
@@ -1684,10 +1684,10 @@ def main():
                         skipped_locations.append(f"{row['name']} (error: {str(e)[:50]})")
                 
                 if skipped_locations:
-                    st.warning(f"⚠️ Skipped locations outside road network: {', '.join(skipped_locations)}")
+                    st.warning(f"Skipped locations outside road network: {', '.join(skipped_locations)}")
                 
                 if len(location_nodes) < 2:
-                    st.error("❌ Not enough valid locations found on the road network. Try locations within Central KL (lat: 3.12-3.17, lon: 101.68-101.72)")
+                    st.error("Not enough valid locations found on the road network. Try locations within Central KL (lat: 3.12-3.17, lon: 101.68-101.72)")
                     st.stop()
                 
                 valid_df = ordered_df.iloc[valid_indices].reset_index(drop=True)
@@ -1721,13 +1721,13 @@ def main():
                     st.write(f"**Service times:** {[s//60 for s in service_times]} min per stop")
                     
                     if total_demand > total_capacity:
-                        st.error(f"⚠️ Total demand ({total_demand}) exceeds total capacity ({total_capacity})!")
+                        st.error(f"Total demand ({total_demand}) exceeds total capacity ({total_capacity})!")
                 
-                st.info(f"🔍 Solving with {len(valid_df)} locations, {num_vehicles} vehicles, {algo_info['id']} algorithm...")
+                st.info(f"Solving with {len(valid_df)} locations, {num_vehicles} vehicles, {algo_info['id']} algorithm...")
                 
                 # Check capacity feasibility
                 if total_demand > total_capacity:
-                    st.error(f"❌ Total demand ({total_demand}) exceeds total vehicle capacity ({total_capacity}). Add more vehicles or increase capacity.")
+                    st.error(f"Total demand ({total_demand}) exceeds total vehicle capacity ({total_capacity}). Add more vehicles or increase capacity.")
                     st.stop()
                 
                 # Solve
@@ -1773,7 +1773,7 @@ def main():
             except Exception as e:
                 st.error(f"Error solving VRP: {str(e)}")
                 import traceback
-                with st.expander("🔍 Error Details"):
+                with st.expander("Error Details"):
                     st.code(traceback.format_exc())
     
     # Display results from session state (persists across reruns)
@@ -1781,10 +1781,10 @@ def main():
         result_data = st.session_state.vrp_result
         
         if result_data.get('feasible'):
-            st.markdown('<div class="success-box">✅ Solution Found!</div>', unsafe_allow_html=True)
+            st.markdown('<div class="success-box">Solution Found!</div>', unsafe_allow_html=True)
             
             # Results section
-            st.subheader("📊 Results")
+            st.subheader("Results")
             
             routes = result_data['routes']
             valid_df = result_data['valid_df']
@@ -1852,7 +1852,7 @@ def main():
                 else:
                     dist_str = f"{int(route_dist_m)} m"
                 
-                with st.expander(f"🚚 Vehicle {v_id + 1} - {len(route)-2} stops | ⏱️ {time_str} | 📏 {dist_str} | 📦 {route_demand} units"):
+                with st.expander(f"Vehicle {v_id + 1} - {len(route)-2} stops | {time_str} | {dist_str} | {route_demand} units"):
                     # Route sequence
                     st.markdown("**Route:**")
                     st.write(" → ".join(route_names))
@@ -1892,19 +1892,19 @@ def main():
             
             st.markdown(f"""
             <div class="info-box">
-                <b>📊 Total Summary:</b> {len(routes)} vehicles | ⏱️ {total_time_str} total travel | 📏 {total_dist_str} total distance
+                <b>Total Summary:</b> {len(routes)} vehicles | {total_time_str} total travel | {total_dist_str} total distance
             </div>
             """, unsafe_allow_html=True)
             
             # Route Map
-            st.subheader("🗺️ Route Map")
+            st.subheader("Route Map")
             
             # Vehicle selector and display options
             map_col1, map_col2 = st.columns([2, 1])
             with map_col1:
                 vehicle_options = [f"Vehicle {i+1}" for i in range(len(routes))]
                 selected_vehicles_names = st.multiselect(
-                    "🚛 Select vehicles to display",
+                    "Select vehicles to display",
                     options=vehicle_options,
                     default=vehicle_options,
                     key="vehicle_selector"
@@ -1913,10 +1913,10 @@ def main():
                 selected_vehicle_ids = [int(v.split()[-1]) - 1 for v in selected_vehicles_names]
             
             with map_col2:
-                show_direction = st.checkbox("🧭 Show direction arrows", value=True, key="show_direction")
-                show_traffic_overlay = st.checkbox("📊 Show historical traffic", value=False, key="show_traffic_overlay")
+                show_direction = st.checkbox("Show direction arrows", value=True, key="show_direction")
+                show_traffic_overlay = st.checkbox("Show historical traffic", value=False, key="show_traffic_overlay")
             
-            st.caption("🚦 Outer band = Vehicle color | Inner color = Traffic (Green=Free → Red=Heavy)")
+            st.caption("Outer band = Vehicle color | Inner color = Traffic (Green=Free to Red=Heavy)")
             
             # Debug: Show route info
             if not routes:
@@ -1934,12 +1934,12 @@ def main():
             if graph_for_map is not None:
                 st.caption(f"✓ Graph loaded with {graph_for_map.number_of_nodes()} nodes")
             else:
-                st.warning("⚠️ No graph available for road routing")
+                st.warning("No graph available for road routing")
             
             if location_nodes is not None:
                 st.caption(f"✓ {len(location_nodes)} location nodes mapped")
             else:
-                st.warning("⚠️ No location nodes available")
+                st.warning("No location nodes available")
             
             route_map, road_paths, fallback_paths = create_route_map(
                 valid_df, routes,
@@ -1960,17 +1960,17 @@ def main():
                 if fallback_paths == 0:
                     st.caption(f"✓ All {road_paths} route segments follow actual roads")
                 else:
-                    st.caption(f"🛣️ Road segments: {road_paths} | ⚠️ Straight-line fallback: {fallback_paths}")
+                    st.caption(f"Road segments: {road_paths} | Straight-line fallback: {fallback_paths}")
             
             # Use unique key based on solve_time to force map refresh
             st_folium(route_map, width=None, height=500, key=f"result_map_{int(solve_time*1000)}")
             
             # Clear results button
-            if st.button("🔄 Clear Results"):
+            if st.button("Clear Results"):
                 del st.session_state.vrp_result
                 st.rerun()
         else:
-            st.error("❌ No feasible solution found. Try:")
+            st.error("No feasible solution found. Try:")
             st.markdown("""
             - Adding more vehicles
             - Increasing vehicle capacity
@@ -1998,7 +1998,7 @@ def main():
     st.markdown("""
     <div style="text-align: center; color: gray; font-size: 0.8rem;">
         VRP Optimizer Dashboard | Built with Streamlit, OR-Tools, and OSMnx<br>
-        📍 Valid area: Greater KL (lat: 3.05-3.20, lon: 101.60-101.75)
+        Valid area: Greater KL (lat: 3.05-3.20, lon: 101.60-101.75)
     </div>
     """, unsafe_allow_html=True)
 
